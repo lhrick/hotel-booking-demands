@@ -31,8 +31,8 @@ MONTHS = [
     "July", "August", "September", "October", "November", "December",
 ]
 
-# A fonte usa tanto o ISO-2 "CN" quanto o ISO-3 "CHN" para a China.
-COUNTRY_CODE_FIXES = {"CN": "CHN"}
+# Códigos ISO-2 ou ISO-3 obsoletos presentes na fonte, mapeados para o ISO-3 atual.
+COUNTRY_CODE_ALIASES = {"CN": "CHN", "TMP": "TLS", "ANG": "AGO"}
 
 UNKNOWN_COUNTRY = "UNK"
 
@@ -83,9 +83,14 @@ def add_arrival_date(df: DataFrame) -> DataFrame:
 
 
 def normalize_country_codes(df: DataFrame) -> DataFrame:
-    """Converte códigos de país fora do padrão (ex.: "CN") para o ISO-3."""
-    fixed = _map_literal(COUNTRY_CODE_FIXES)[F.col("country")]
-    return df.withColumn("country", F.coalesce(fixed, F.col("country")))
+    """Guarda o código original em `country_raw` e converte aliases para o ISO-3 canônico."""
+    canonical = _map_literal(COUNTRY_CODE_ALIASES)[F.col("country")]
+    return df.withColumns({"country_raw": F.col("country"), "country": F.coalesce(canonical, F.col("country"))})
+
+
+def canonical_countries(countries: DataFrame) -> DataFrame:
+    """Remove da dimensão as linhas de códigos alias, deixando um código ISO-3 por país."""
+    return countries.filter(~F.col("country_code").isin(*COUNTRY_CODE_ALIASES))
 
 
 def fill_nulls(df: DataFrame) -> DataFrame:
@@ -160,13 +165,18 @@ def check_row_count(expected: int, df: DataFrame, step: str) -> None:
 def run(spark: SparkSession, config: PipelineConfig) -> None:
     bookings = spark.read.parquet(str(config.bronze_dir / "bookings"))
     countries = spark.read.parquet(str(config.bronze_dir / "countries"))
+    canonical = canonical_countries(countries)
+    logger.info(
+        "country_metadata: dropped %d alias rows %s", countries.count() - canonical.count(), list(COUNTRY_CODE_ALIASES)
+    )
+    countries = canonical
     hotels = spark.read.parquet(str(config.bronze_dir / "hotels"))
     logger.info("bookings: read %d rows from bronze", bookings.count())
 
     df = add_arrival_date(cast_types(bookings))
     logger.info("children: %d values not castable to int (source 'NA') -> 0", df.filter(F.col("children").isNull()).count())
-    fixed = df.filter(F.col("country").isin(*COUNTRY_CODE_FIXES)).count()
-    logger.info("country: %d rows normalized %s", fixed, COUNTRY_CODE_FIXES)
+    for r in df.filter(F.col("country").isin(*COUNTRY_CODE_ALIASES)).groupBy("country").count().collect():
+        logger.info("country: %d rows normalized %s -> %s", r["count"], r["country"], COUNTRY_CODE_ALIASES[r["country"]])
     logger.info("country: %d null values -> '%s'", df.filter(F.col("country").isNull()).count(), UNKNOWN_COUNTRY)
     df = fill_nulls(normalize_country_codes(df))
 

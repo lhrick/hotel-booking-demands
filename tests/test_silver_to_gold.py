@@ -96,3 +96,17 @@ def test_stay_profile_uses_effective_bookings(spark: SparkSession) -> None:
     assert row.effective_bookings == 2
     assert (row.avg_total_nights, row.avg_total_guests) == (6.0, 2.0)
     assert (row.pct_long_stay, row.pct_family) == (0.5, 0.5)
+
+
+def test_top_countries_keeps_same_name_countries_apart(spark: SparkSession) -> None:
+    silver = _silver(
+        spark,
+        [
+            {"country": "KOR", "country_name": "Korea", "continent": "Asia", "revenue": 300.0},
+            {"country": "PRK", "country_name": "Korea", "continent": "Asia", "revenue": 100.0},
+        ],
+    )
+
+    result = {r.country: r.total_revenue for r in top_countries_by_revenue(silver).collect()}
+
+    assert result == {"KOR": 300.0, "PRK": 100.0}

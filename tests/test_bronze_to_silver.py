@@ -9,6 +9,7 @@ from scripts.bronze_to_silver import (
     add_arrival_date,
     add_derived_columns,
     apply_drop_rules,
+    canonical_countries,
     cast_types,
     check_row_count,
     count_warn_rules,
@@ -56,11 +57,27 @@ def test_cast_types_children_na_becomes_null_and_parses_status_date(spark: Spark
 
 
 def test_fill_nulls_and_country_normalization(spark: SparkSession) -> None:
-    df = spark.createDataFrame([(None, None), (1, "CN"), (2, "PRT")], "children int, country string")
+    df = spark.createDataFrame(
+        [(None, None), (1, "CN"), (2, "TMP"), (3, "ANG"), (4, "PRT")], "children int, country string"
+    )
 
     rows = fill_nulls(normalize_country_codes(df)).orderBy("children").collect()
 
-    assert [(r.children, r.country) for r in rows] == [(0, "UNK"), (1, "CHN"), (2, "PRT")]
+    assert [(r.children, r.country, r.country_raw) for r in rows] == [
+        (0, "UNK", None),
+        (1, "CHN", "CN"),
+        (2, "TLS", "TMP"),
+        (3, "AGO", "ANG"),
+        (4, "PRT", "PRT"),
+    ]
+
+
+def test_canonical_countries_drops_aliases(spark: SparkSession) -> None:
+    countries = spark.createDataFrame(
+        [("CHN", "China", "Asia"), ("CN", "China", "Asia")], "country_code string, country_name string, continent string"
+    )
+
+    assert [r.country_code for r in canonical_countries(countries).collect()] == ["CHN"]
 
 
 @pytest.mark.parametrize(
