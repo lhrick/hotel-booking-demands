@@ -1,0 +1,22 @@
+# Relative paths are resolved against the project root.
+base_path: data
+
+layers:
+  raw: raw
+  bronze: bronze
+  silver: silver
+  gold: gold
+
+raw_files:
+  bookings: hotel_bookings.csv
+  countries: country_metadata.csv
+  hotels: hotel_metadata.csv
+
+csv_options:
+  header: true
+  sep: ","
+  nullValue: "NULL"
+  # Fail on values that do not match the explicit schema instead of silently nulling them.
+  mode: FAILFAST
+  # Validate CSV header names against the explicit schema.
+  enforceSchema: false
