@@ -14,3 +14,6 @@ __pycache__/
 .ipynb_checkpoints/
 .pytest_cache/
 .env
+
+# Dev notes (local only for now)
+devlog/
