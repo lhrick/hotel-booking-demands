@@ -1,0 +1,16 @@
+# Generated layers
+data/bronze/
+data/silver/
+data/gold/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Python
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.pytest_cache/
+.env
