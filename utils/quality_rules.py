@@ -15,4 +15,6 @@ SILVER_WARN_RULES: dict[str, str] = {
     "valid_arrival_date": "arrival_date IS NOT NULL",
     "known_country": "country <> 'UNK'",
     "has_country_metadata": "country_name IS NOT NULL",
+    # Limite heurístico: o maior adr plausível na fonte é 510; acima de 1000 indica provável erro de digitação.
+    "adr_within_expected_range": "adr <= 1000",
 }

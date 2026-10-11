@@ -168,11 +168,22 @@ def test_joins_keep_row_count_and_bring_attributes(spark: SparkSession) -> None:
         "Portugal", "Europe", "Lisbon", 4, 2008,
     )
     assert result.filter("country_name IS NULL").count() == 2
-    assert count_warn_rules(result.withColumn("arrival_date", F.current_date()), SILVER_WARN_RULES) == {
+    assert count_warn_rules(
+        result.withColumns({"arrival_date": F.current_date(), "adr": F.lit(100.0)}), SILVER_WARN_RULES
+    ) == {
         "valid_arrival_date": 0,
         "known_country": 1,
         "has_country_metadata": 2,
+        "adr_within_expected_range": 0,
     }
+
+
+def test_adr_warn_rule_flags_outlier_without_removing(spark: SparkSession) -> None:
+    df = spark.createDataFrame([(1000.0,), (5400.0,)], "adr double")
+    rule = {"adr_within_expected_range": SILVER_WARN_RULES["adr_within_expected_range"]}
+
+    assert count_warn_rules(df, rule) == {"adr_within_expected_range": 1}
+    assert df.count() == 2
 
 
 def test_join_with_duplicate_key_fails(spark: SparkSession) -> None:
