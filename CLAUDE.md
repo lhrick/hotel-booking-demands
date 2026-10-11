@@ -27,11 +27,12 @@ Este arquivo orienta o Claude Code na construção deste projeto. Leia inteiro a
   - LEFT JOIN com `country_metadata` (traz `country_name`, `continent`) e com `hotel_metadata` (renomeando para `hotel_city`, `hotel_star_rating`, `hotel_opened_year`);
   - **verificar que a contagem de linhas não muda após cada join** e falhar com erro claro se mudar;
   - gravar em `data/silver/bookings_enriched/`, particionado por `arrival_date_year` e `arrival_date_month_num` (bônus).
-- **Gold:** implementar as 4 visões sugeridas, todas com `groupBy` + `agg`, em Parquet, com nomes de colunas autoexplicativos:
+- **Gold:** implementar as 4 visões sugeridas mais uma própria, todas com `groupBy` + `agg`, em Parquet, com nomes de colunas autoexplicativos:
   - `data/gold/revenue_by_hotel_month/`
   - `data/gold/cancellation_by_segment/`
   - `data/gold/top_countries_by_revenue/` (Top 20, ordenado por `total_revenue` desc)
   - `data/gold/stay_profile/` (por `hotel` e `customer_type`)
+  - `data/gold/cancellation_risk_profile/` (5ª visão, proposta além das sugeridas: perfis de risco de cancelamento)
 - `revenue = adr * total_nights` apenas quando `is_canceled = 0`; caso contrário, 0. Documentar que No-Show conta como cancelado no dataset.
 - `avg_adr` considera apenas reservas efetivas, como pede o enunciado.
 - **Recorte:** dataset completo (opção recomendada pelo enunciado), registrado no README.

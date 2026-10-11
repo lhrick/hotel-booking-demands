@@ -19,6 +19,12 @@ logger = logging.getLogger("silver_to_gold")
 
 TOP_COUNTRIES_LIMIT = 20
 
+# Limiares heurísticos para classificar o risco; devem ser validados com o negócio.
+HIGH_RISK_RATE = 0.6
+MEDIUM_RISK_RATE = 0.3
+# Abaixo deste volume, a taxa do grupo é instável demais para orientar uma campanha.
+RISK_MIN_BOOKINGS = 50
+
 
 def _effective() -> Column:
     """Condição de reserva efetiva (não cancelada)."""
@@ -100,11 +106,37 @@ def stay_profile(silver: DataFrame) -> DataFrame:
     )
 
 
+def cancellation_risk_profile(silver: DataFrame) -> DataFrame:
+    """Taxa de cancelamento por sinais conhecidos na reserva, para orientar campanhas de retenção."""
+    potential_revenue = F.col("adr") * F.col("total_nights")
+    rate = F.col("cancellation_rate")
+    return (
+        silver.groupBy(
+            "deposit_type", "market_segment", "lead_time_bucket", "previous_cancellations_bucket", "has_previous_stay"
+        )
+        .agg(
+            F.count("*").alias("total_bookings"),
+            F.sum("is_canceled").alias("cancelled_bookings"),
+            F.round(F.sum(F.when(F.col("is_canceled") == 1, potential_revenue).otherwise(0.0)), 2).alias(
+                "cancelled_potential_revenue"
+            ),
+        )
+        .withColumn("cancellation_rate", _rate("cancelled_bookings", "total_bookings"))
+        .withColumn(
+            "risk_level",
+            F.when(rate >= HIGH_RISK_RATE, "high").when(rate >= MEDIUM_RISK_RATE, "medium").otherwise("low"),
+        )
+        .withColumn("has_min_sample", (F.col("total_bookings") >= RISK_MIN_BOOKINGS).cast("int"))
+        .orderBy(F.desc("cancelled_potential_revenue"))
+    )
+
+
 GOLD_VIEWS = {
     "revenue_by_hotel_month": revenue_by_hotel_month,
     "cancellation_by_segment": cancellation_by_segment,
     "top_countries_by_revenue": top_countries_by_revenue,
     "stay_profile": stay_profile,
+    "cancellation_risk_profile": cancellation_risk_profile,
 }
 
 

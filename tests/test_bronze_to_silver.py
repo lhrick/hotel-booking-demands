@@ -7,6 +7,7 @@ from pyspark.sql import functions as F
 from scripts.bronze_to_silver import (
     RowCountMismatchError,
     add_arrival_date,
+    add_cancellation_risk_features,
     add_derived_columns,
     apply_drop_rules,
     canonical_countries,
@@ -131,6 +132,22 @@ def test_derived_columns(spark: SparkSession) -> None:
     assert by_status["No-Show"].revenue == 0.0
     assert by_status["No-Show"].booking_status == "NoShow"
     assert by_status["No-Show"].is_family == 1
+
+
+def test_cancellation_risk_features_boundaries(spark: SparkSession) -> None:
+    df = spark.createDataFrame(
+        [(7, 0, 0), (8, 1, 2), (365, 5, 0), (366, 0, 0)],
+        "lead_time int, previous_cancellations int, previous_bookings_not_canceled int",
+    )
+
+    rows = add_cancellation_risk_features(df).orderBy("lead_time").collect()
+
+    assert [(r.lead_time_bucket, r.previous_cancellations_bucket, r.has_previous_stay) for r in rows] == [
+        ("000-007", "0", 0),
+        ("008-030", "1", 1),
+        ("181-365", "2+", 0),
+        ("366+", "0", 0),
+    ]
 
 
 def test_joins_keep_row_count_and_bring_attributes(spark: SparkSession) -> None:

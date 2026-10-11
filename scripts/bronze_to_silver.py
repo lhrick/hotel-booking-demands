@@ -135,6 +135,31 @@ def add_derived_columns(df: DataFrame) -> DataFrame:
     )
 
 
+def add_cancellation_risk_features(df: DataFrame) -> DataFrame:
+    """Faixas de sinais de risco de cancelamento conhecidos no momento da reserva.
+
+    Os rótulos com zeros à esquerda fazem a ordenação alfabética coincidir com a numérica.
+    """
+    lead_time = F.col("lead_time")
+    previous_cancellations = F.col("previous_cancellations")
+    return df.withColumns(
+        {
+            "lead_time_bucket": (
+                F.when(lead_time <= 7, "000-007")
+                .when(lead_time <= 30, "008-030")
+                .when(lead_time <= 90, "031-090")
+                .when(lead_time <= 180, "091-180")
+                .when(lead_time <= 365, "181-365")
+                .otherwise("366+")
+            ),
+            "previous_cancellations_bucket": (
+                F.when(previous_cancellations == 0, "0").when(previous_cancellations == 1, "1").otherwise("2+")
+            ),
+            "has_previous_stay": (F.col("previous_bookings_not_canceled") > 0).cast("int"),
+        }
+    )
+
+
 def enrich_with_countries(bookings: DataFrame, countries: DataFrame) -> DataFrame:
     """LEFT JOIN com `country_metadata` pelo código do país; traz `country_name` e `continent`."""
     dim = countries.select(F.col("country_code").alias("country"), "country_name", "continent")
@@ -184,7 +209,7 @@ def run(spark: SparkSession, config: PipelineConfig) -> None:
     for name, count in removed.items():
         logger.info("drop rule %s: removed %d rows", name, count)
 
-    df = add_derived_columns(df)
+    df = add_cancellation_risk_features(add_derived_columns(df))
     expected = df.count()
     logger.info("bookings after drop rules: %d rows", expected)
 
