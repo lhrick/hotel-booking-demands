@@ -16,7 +16,7 @@ def test_ingestion_metadata_columns(spark: SparkSession, tmp_path: Path) -> None
     ingested_at = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
 
     df = add_ingestion_metadata(read_raw_csv(spark, str(csv), HOTELS_SCHEMA, CSV_OPTIONS), ingested_at)
-    # Format inside Spark (session time zone UTC): collect() would convert to the local Python time zone.
+    # Formata dentro do Spark (fuso da sessão em UTC): o collect() converteria para o fuso local do Python.
     row = df.withColumn("ingested_at_utc", F.date_format("ingested_at", "yyyy-MM-dd HH:mm:ss")).first()
 
     assert df.columns[-2:] == ["ingested_at", "source_file_name"]

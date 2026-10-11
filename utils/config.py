@@ -1,4 +1,4 @@
-"""Pipeline configuration: loads utils/config.yaml and resolves layer paths."""
+"""Configuração do pipeline: carrega utils/config.yaml e resolve os caminhos das camadas."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "utils" / "config.yaml"
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    """Resolved paths and read options for every layer."""
+    """Caminhos resolvidos e opções de leitura de cada camada."""
 
     raw_dir: Path
     bronze_dir: Path
@@ -34,7 +34,7 @@ def _resolve(path: str | Path) -> Path:
 
 
 def load_config(config_path: str | Path = DEFAULT_CONFIG_PATH, base_path: str | None = None) -> PipelineConfig:
-    """Load the YAML config; `base_path` overrides the one in the file."""
+    """Carrega o YAML; `base_path` sobrescreve o valor do arquivo."""
     with open(_resolve(config_path), encoding="utf-8") as fh:
         raw = yaml.safe_load(fh)
 
@@ -51,7 +51,7 @@ def load_config(config_path: str | Path = DEFAULT_CONFIG_PATH, base_path: str | 
 
 
 def parse_args(description: str) -> PipelineConfig:
-    """Standard CLI for the pipeline scripts: --config and --base-path."""
+    """CLI padrão dos scripts do pipeline: --config e --base-path."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="Path to the YAML config.")
     parser.add_argument("--base-path", default=None, help="Override the base data directory from the config.")

@@ -1,4 +1,4 @@
-"""SparkSession and logging setup shared by the pipeline scripts."""
+"""SparkSession e configuração de logging compartilhadas pelos scripts."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 
 def get_spark(app_name: str) -> SparkSession:
-    """Local SparkSession sized for a ~120k-row dataset."""
+    """SparkSession local dimensionada para um dataset de ~120 mil linhas."""
     return (
         SparkSession.builder.master("local[*]")
         .appName(app_name)

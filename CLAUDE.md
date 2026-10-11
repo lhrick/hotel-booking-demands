@@ -159,7 +159,7 @@ Não afirmar experiência com Terraform. Descrever os bundles como IaC declarati
 
 - `.gitignore`: `data/bronze/`, `data/silver/`, `data/gold/`, `spark-warehouse/`, `metastore_db/`, `derby.log`, `.venv/`, `__pycache__/`, `.ipynb_checkpoints/`, `.pytest_cache/`, `.env`.
 - Os CSVs em `data/raw/` são versionados (pequenos, garantem a reprodutibilidade para o avaliador).
-- Código, nomes de colunas e commits em **inglês**; README em português.
+- Código, nomes de colunas, logs e commits em **inglês**; comentários, docstrings e README em **português**.
 - Conventional commits (`feat:`, `test:`, `docs:`, `chore:`), com pelo menos um commit por fase.
 - Type hints e docstrings curtas.
 - Não adicione dependências além das listadas sem me perguntar.

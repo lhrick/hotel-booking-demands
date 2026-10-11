@@ -32,8 +32,8 @@ def test_arrival_date_maps_month_name_and_pads(spark: SparkSession) -> None:
     assert [(r.arrival_date_month_num, r.arrival_date) for r in rows] == [
         (7, dt.date(2015, 7, 1)),
         (12, dt.date(2016, 12, 31)),
-        (2, None),  # impossible date -> null, counted by the warn rule
-        (None, None),  # unknown month name
+        (2, None),  # data impossível -> nulo, contada pela regra de alerta
+        (None, None),  # nome de mês desconhecido
     ]
 
 
@@ -68,8 +68,8 @@ def test_fill_nulls_and_country_normalization(spark: SparkSession) -> None:
     [
         ((0, 0, 0, 50.0), "has_guests"),
         ((2, 0, 0, -6.38), "non_negative_adr"),
-        ((1, 0, 0, 0.0), None),  # adr = 0 is valid
-        ((0, 0, 1, 10.0), None),  # a baby alone still counts as a guest
+        ((1, 0, 0, 0.0), None),  # adr = 0 é válido
+        ((0, 0, 1, 10.0), None),  # um bebê sozinho conta como hóspede
     ],
 )
 def test_drop_rules(spark: SparkSession, row: tuple, removed_by: str | None) -> None:

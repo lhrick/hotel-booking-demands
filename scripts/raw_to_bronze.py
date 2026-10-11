@@ -1,4 +1,4 @@
-"""Raw -> Bronze: ingest the source CSVs as-is into Snappy Parquet, plus ingestion metadata."""
+"""Raw -> Bronze: ingere os CSVs de origem sem alteração em Parquet Snappy, com metadados de ingestão."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# spark-submit does not put the project root on sys.path; add it so `utils` is importable.
+# O spark-submit não coloca a raiz do projeto no sys.path; adiciona aqui para importar `utils`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pyspark.sql import DataFrame, SparkSession
@@ -20,7 +20,7 @@ from utils.spark import get_spark, setup_logging
 
 logger = logging.getLogger("raw_to_bronze")
 
-# (raw file key, schema, bronze table, partition columns)
+# (chave do arquivo raw, schema, tabela bronze, colunas de partição)
 SOURCES: list[tuple[str, StructType, str, list[str]]] = [
     ("bookings", BOOKINGS_SCHEMA, "bookings", ["arrival_date_year"]),
     ("countries", COUNTRIES_SCHEMA, "countries", []),
@@ -29,12 +29,12 @@ SOURCES: list[tuple[str, StructType, str, list[str]]] = [
 
 
 def read_raw_csv(spark: SparkSession, path: str, schema: StructType, options: dict) -> DataFrame:
-    """Read a source CSV with an explicit schema and the configured options."""
+    """Lê um CSV de origem com schema explícito e as opções configuradas."""
     return spark.read.options(**options).schema(schema).csv(path)
 
 
 def add_ingestion_metadata(df: DataFrame, ingested_at: datetime) -> DataFrame:
-    """Append `ingested_at` (run timestamp, UTC) and `source_file_name` (from the file metadata column)."""
+    """Adiciona `ingested_at` (timestamp da execução, UTC) e `source_file_name` (da coluna de metadados do arquivo)."""
     return df.withColumns(
         {
             "ingested_at": F.lit(ingested_at).cast("timestamp"),
@@ -44,6 +44,7 @@ def add_ingestion_metadata(df: DataFrame, ingested_at: datetime) -> DataFrame:
 
 
 def write_bronze(df: DataFrame, path: str, partition_by: list[str]) -> None:
+    """Grava a tabela em Parquet Snappy com overwrite, particionada quando houver colunas de partição."""
     writer = df.write.mode("overwrite").option("compression", "snappy")
     if partition_by:
         writer = writer.partitionBy(*partition_by)
@@ -51,7 +52,7 @@ def write_bronze(df: DataFrame, path: str, partition_by: list[str]) -> None:
 
 
 def run(spark: SparkSession, config: PipelineConfig) -> None:
-    # One timestamp per run, shared by every table ingested in this batch.
+    # Um timestamp por execução, compartilhado por todas as tabelas deste lote.
     ingested_at = datetime.now(timezone.utc)
     logger.info("ingestion run at %s", ingested_at.isoformat())
     for source, schema, table, partition_by in SOURCES:

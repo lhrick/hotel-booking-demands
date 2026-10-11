@@ -1,4 +1,4 @@
-# Relative paths are resolved against the project root.
+# Caminhos relativos são resolvidos a partir da raiz do projeto.
 base_path: data
 
 layers:
@@ -16,7 +16,7 @@ csv_options:
   header: true
   sep: ","
   nullValue: "NULL"
-  # Fail on values that do not match the explicit schema instead of silently nulling them.
+  # Falha em valores fora do schema explícito em vez de anulá-los silenciosamente.
   mode: FAILFAST
-  # Validate CSV header names against the explicit schema.
+  # Valida os nomes do cabeçalho do CSV contra o schema explícito.
   enforceSchema: false

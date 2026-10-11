@@ -1,7 +1,7 @@
-"""Explicit Bronze schemas, mirroring the source CSVs.
+"""Schemas explícitos da Bronze, espelhando os CSVs de origem.
 
-`children` and `reservation_status_date` stay as strings in Bronze to keep the
-source values intact (`children` has literal "NA"); they are cast in Silver.
+`children` e `reservation_status_date` ficam como string na Bronze para preservar
+os valores da fonte (`children` tem o literal "NA"); a conversão é feita na Silver.
 """
 
 from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType

@@ -38,7 +38,7 @@ def test_revenue_by_hotel_month_metrics(spark: SparkSession) -> None:
 
     assert (row.total_bookings, row.effective_bookings, row.cancelled_bookings) == (3, 2, 1)
     assert row.total_revenue == 400.0
-    assert row.avg_adr == 75.0  # canceled booking's adr is ignored
+    assert row.avg_adr == 75.0  # o adr da reserva cancelada é ignorado
     assert row.total_nights_sold == 6
     assert row.cancellation_rate == pytest.approx(0.3333)
 
@@ -66,8 +66,8 @@ def test_cancellation_rate_between_0_and_1(spark: SparkSession) -> None:
 def test_top_countries_limit_order_and_exclusions(spark: SparkSession) -> None:
     rows = [{"country": f"C{i:02d}", "country_name": f"Country {i}", "revenue": float(i * 10)} for i in range(25)]
     rows += [
-        {"country": "UNK", "country_name": None, "continent": None, "revenue": 1e9},  # unknown country is not ranked
-        {"country": "C24", "country_name": "Country 24", "is_canceled": 1, "revenue": 0.0},  # canceled is excluded
+        {"country": "UNK", "country_name": None, "continent": None, "revenue": 1e9},  # país desconhecido não entra no ranking
+        {"country": "C24", "country_name": "Country 24", "is_canceled": 1, "revenue": 0.0},  # reserva cancelada é excluída
     ]
 
     result = top_countries_by_revenue(_silver(spark, rows)).collect()

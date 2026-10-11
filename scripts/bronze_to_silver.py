@@ -1,4 +1,4 @@
-"""Bronze -> Silver: type casting, cleaning, derived columns and enrichment."""
+"""Bronze -> Silver: conversão de tipos, limpeza, colunas derivadas e enriquecimento."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-# spark-submit does not put the project root on sys.path; add it so `utils` is importable.
+# O spark-submit não coloca a raiz do projeto no sys.path; adiciona aqui para importar `utils`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pyspark.sql import Column, DataFrame, SparkSession
@@ -31,7 +31,7 @@ MONTHS = [
     "July", "August", "September", "October", "November", "December",
 ]
 
-# Source uses both the ISO-2 "CN" and the ISO-3 "CHN" for China.
+# A fonte usa tanto o ISO-2 "CN" quanto o ISO-3 "CHN" para a China.
 COUNTRY_CODE_FIXES = {"CN": "CHN"}
 
 UNKNOWN_COUNTRY = "UNK"
@@ -42,19 +42,20 @@ SILVER_PARTITIONS = ["arrival_date_year", "arrival_date_month_num"]
 
 
 class RowCountMismatchError(RuntimeError):
-    """A join changed the number of rows (duplicate keys in a reference table)."""
+    """Um join alterou o número de linhas (chave duplicada em uma tabela de referência)."""
 
 
 def _map_literal(mapping: dict) -> Column:
+    """Converte um dicionário Python em uma coluna de mapa literal do Spark."""
     return F.create_map(*[F.lit(x) for kv in mapping.items() for x in kv])
 
 
 def cast_types(df: DataFrame) -> DataFrame:
-    """Cast numeric and date columns to the Silver types.
+    """Converte colunas numéricas e de data para os tipos da Silver.
 
-    `children` uses try_cast because the source has literal "NA" and ANSI mode
-    (default in Spark 4) makes a plain cast fail. `reservation_status_date` uses a
-    strict to_date: its format was validated, so a failure means the source changed.
+    `children` usa try_cast porque a fonte tem o literal "NA" e o modo ANSI (padrão
+    no Spark 4) faz o cast simples falhar. `reservation_status_date` usa to_date
+    estrito: o formato foi validado, então uma falha indica mudança na fonte.
     """
     return (
         df.withColumns({c: F.col(c).cast("int") for c in INT_COLUMNS})
@@ -65,10 +66,10 @@ def cast_types(df: DataFrame) -> DataFrame:
 
 
 def add_arrival_date(df: DataFrame) -> DataFrame:
-    """Add `arrival_date_month_num` (1-12) and `arrival_date`.
+    """Adiciona `arrival_date_month_num` (1-12) e `arrival_date`.
 
-    try_to_date returns null for impossible dates instead of failing the job;
-    those rows are counted by the `valid_arrival_date` warn rule.
+    try_to_date devolve nulo para datas impossíveis em vez de falhar o job; essas
+    linhas são contadas pela regra de alerta `valid_arrival_date`.
     """
     month_num = _map_literal({name: i for i, name in enumerate(MONTHS, start=1)})[F.col("arrival_date_month")]
     df = df.withColumn("arrival_date_month_num", month_num)
@@ -82,18 +83,18 @@ def add_arrival_date(df: DataFrame) -> DataFrame:
 
 
 def normalize_country_codes(df: DataFrame) -> DataFrame:
-    """Map non-standard country codes (e.g. "CN") to their ISO-3 form."""
+    """Converte códigos de país fora do padrão (ex.: "CN") para o ISO-3."""
     fixed = _map_literal(COUNTRY_CODE_FIXES)[F.col("country")]
     return df.withColumn("country", F.coalesce(fixed, F.col("country")))
 
 
 def fill_nulls(df: DataFrame) -> DataFrame:
-    """`children` null -> 0; `country` null -> "UNK"."""
+    """`children` nulo -> 0; `country` nulo -> "UNK"."""
     return df.fillna({"children": 0, "country": UNKNOWN_COUNTRY})
 
 
 def apply_drop_rules(df: DataFrame, rules: dict[str, str]) -> tuple[DataFrame, dict[str, int]]:
-    """Apply each drop rule in order; return the filtered DataFrame and rows removed per rule."""
+    """Aplica cada regra de remoção em ordem; devolve o DataFrame filtrado e as linhas removidas por regra."""
     removed: dict[str, int] = {}
     for name, rule in rules.items():
         before = df.count()
@@ -103,7 +104,7 @@ def apply_drop_rules(df: DataFrame, rules: dict[str, str]) -> tuple[DataFrame, d
 
 
 def count_warn_rules(df: DataFrame, rules: dict[str, str]) -> dict[str, int]:
-    """Count rows failing each warn rule (null results count as failures)."""
+    """Conta as linhas que falham em cada regra de alerta (resultado nulo conta como falha)."""
     row = df.select(
         *[F.sum(F.when(F.coalesce(F.expr(rule), F.lit(False)), 0).otherwise(1)).alias(name) for name, rule in rules.items()]
     ).first()
@@ -111,6 +112,7 @@ def count_warn_rules(df: DataFrame, rules: dict[str, str]) -> dict[str, int]:
 
 
 def add_derived_columns(df: DataFrame) -> DataFrame:
+    """Adiciona as colunas derivadas: noites, hóspedes, família, status, estadia longa e receita."""
     total_nights = F.col("stays_in_weekend_nights") + F.col("stays_in_week_nights")
     df = df.withColumns(
         {
@@ -121,7 +123,7 @@ def add_derived_columns(df: DataFrame) -> DataFrame:
             "is_long_stay": (total_nights > 7).cast("int"),
         }
     )
-    # No-Show rows have is_canceled = 1, so they generate no revenue.
+    # No-Show vem com is_canceled = 1, portanto não gera receita.
     return df.withColumn(
         "revenue",
         F.when(F.col("is_canceled") == 0, F.col("adr") * F.col("total_nights")).otherwise(F.lit(0.0)),
@@ -129,11 +131,13 @@ def add_derived_columns(df: DataFrame) -> DataFrame:
 
 
 def enrich_with_countries(bookings: DataFrame, countries: DataFrame) -> DataFrame:
+    """LEFT JOIN com `country_metadata` pelo código do país; traz `country_name` e `continent`."""
     dim = countries.select(F.col("country_code").alias("country"), "country_name", "continent")
     return bookings.join(F.broadcast(dim), on="country", how="left")
 
 
 def enrich_with_hotels(bookings: DataFrame, hotels: DataFrame) -> DataFrame:
+    """LEFT JOIN com `hotel_metadata` pelo nome do hotel; traz cidade, estrelas e ano de abertura."""
     dim = hotels.select(
         F.col("hotel_name").alias("hotel"),
         F.col("city").alias("hotel_city"),
@@ -144,6 +148,7 @@ def enrich_with_hotels(bookings: DataFrame, hotels: DataFrame) -> DataFrame:
 
 
 def check_row_count(expected: int, df: DataFrame, step: str) -> None:
+    """Falha com RowCountMismatchError se a contagem de linhas mudou após um join."""
     actual = df.count()
     if actual != expected:
         raise RowCountMismatchError(

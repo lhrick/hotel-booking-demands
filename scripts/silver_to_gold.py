@@ -1,4 +1,4 @@
-"""Silver -> Gold: aggregated analytical views."""
+"""Silver -> Gold: visões analíticas agregadas."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-# spark-submit does not put the project root on sys.path; add it so `utils` is importable.
+# O spark-submit não coloca a raiz do projeto no sys.path; adiciona aqui para importar `utils`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pyspark.sql import Column, DataFrame, SparkSession, Window
@@ -19,22 +19,24 @@ logger = logging.getLogger("silver_to_gold")
 
 TOP_COUNTRIES_LIMIT = 20
 
+
 def _effective() -> Column:
+    """Condição de reserva efetiva (não cancelada)."""
     return F.col("is_canceled") == 0
 
 
-
 def _effective_only(col: str) -> Column:
-    """Value of `col` for effective (non-canceled) bookings, null otherwise; aggregates skip nulls."""
+    """Valor de `col` para reservas efetivas (não canceladas), nulo caso contrário; as agregações ignoram nulos."""
     return F.when(_effective(), F.col(col))
 
 
 def _rate(numerator: str, denominator: str) -> Column:
+    """Razão entre duas colunas, arredondada em 4 casas."""
     return F.round(F.col(numerator) / F.col(denominator), 4)
 
 
 def revenue_by_hotel_month(silver: DataFrame) -> DataFrame:
-    """Revenue and occupancy per hotel and arrival month."""
+    """Receita e ocupação por hotel e mês de chegada."""
     return (
         silver.groupBy("hotel", "arrival_date_year", "arrival_date_month_num", "arrival_date_month")
         .agg(
@@ -51,7 +53,7 @@ def revenue_by_hotel_month(silver: DataFrame) -> DataFrame:
 
 
 def cancellation_by_segment(silver: DataFrame) -> DataFrame:
-    """Cancellation behaviour per market segment, distribution channel and customer type."""
+    """Cancelamentos por segmento de mercado, canal de distribuição e tipo de cliente."""
     return (
         silver.groupBy("market_segment", "distribution_channel", "customer_type")
         .agg(
@@ -66,7 +68,7 @@ def cancellation_by_segment(silver: DataFrame) -> DataFrame:
 
 
 def top_countries_by_revenue(silver: DataFrame, limit: int = TOP_COUNTRIES_LIMIT) -> DataFrame:
-    """Top countries by revenue from effective bookings; unknown country is excluded from the ranking."""
+    """Principais países por receita de reservas efetivas; país desconhecido fica fora do ranking."""
     ranked = (
         silver.filter(_effective() & (F.col("country") != "UNK"))
         .groupBy("country", "country_name", "continent")
@@ -76,14 +78,14 @@ def top_countries_by_revenue(silver: DataFrame, limit: int = TOP_COUNTRIES_LIMIT
             F.round(F.sum("revenue") / F.count("*"), 2).alias("avg_ticket"),
             F.round(F.avg("lead_time"), 2).alias("avg_lead_time"),
         )
-        # Single-partition window is fine: at most ~180 countries.
+        # Janela em partição única não é problema: no máximo ~180 países.
         .withColumn("revenue_rank", F.row_number().over(Window.orderBy(F.desc("total_revenue"), "country")))
     )
     return ranked.filter(F.col("revenue_rank") <= limit).orderBy("revenue_rank")
 
 
 def stay_profile(silver: DataFrame) -> DataFrame:
-    """Stay length and guest profile per hotel and customer type (effective bookings only)."""
+    """Duração da estadia e perfil de hóspedes por hotel e tipo de cliente (só reservas efetivas)."""
     return (
         silver.filter(_effective())
         .groupBy("hotel", "customer_type")
@@ -112,7 +114,7 @@ def run(spark: SparkSession, config: PipelineConfig) -> None:
 
     for name, build in GOLD_VIEWS.items():
         target = str(config.gold_dir / name)
-        # Gold views are tiny; a single ordered file is easier to consume.
+        # As visões Gold são pequenas; um único arquivo ordenado é mais fácil de consumir.
         build(silver).coalesce(1).write.mode("overwrite").parquet(target)
         logger.info("%s: wrote %d rows to %s", name, spark.read.parquet(target).count(), target)
 

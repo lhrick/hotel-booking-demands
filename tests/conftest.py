@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pyspark.sql import SparkSession
 
-# Make `scripts` and `utils` importable without installing the project.
+# Permite importar `scripts` e `utils` sem instalar o projeto.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
