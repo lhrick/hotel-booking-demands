@@ -102,7 +102,7 @@ Levantados no notebook `notebooks/exploracao_inicial.ipynb`; contagens abaixo s�
 
 | Achado | Tratamento | Linhas |
 |---|---|---|
-| Linhas inteiramente duplicadas | **Mantidas** (ver abaixo) | 31.994 excedentes (26,8%) |
+| Linhas inteiramente duplicadas | **Mantidas** e marcadas em `is_duplicate_row` (ver abaixo) | 31.994 excedentes (26,8%); 40.141 linhas em conjuntos repetidos na Silver |
 | `children = "NA"`, não coberto por `nullValue="NULL"` | Bronze lê como string; Silver usa `try_cast` e preenche com 0 | 4 |
 | `country = "NULL"` | Vira `"UNK"` | 488 |
 | Códigos de país legados ou ISO-2 (`CN`, `TMP`, `ANG`) | Normalizados para ISO-3 (`CHN`, `TLS`, `AGO`) | 1.279 / 3 / 0 |
@@ -111,7 +111,22 @@ Levantados no notebook `notebooks/exploracao_inicial.ipynb`; contagens abaixo s�
 | Países sem metadado | Apenas os `UNK`; todos os 176 códigos reais (177 na fonte, antes de unificar `CN` com `CHN`) têm correspondência | 478 após filtros |
 | `adr` acima de 1.000 | Mantido; regra de alerta `adr_within_expected_range` | 1 |
 
-**Duplicatas.** O dataset não tem ID de reserva. Sem chave de negócio, não dá para distinguir uma duplicata técnica de reservas idênticas legítimas (por exemplo, um grupo que reserva vários quartos iguais no mesmo dia pelo mesmo agente). Deduplicar removeria receita real de forma silenciosa, então as linhas foram mantidas e a contagem fica registrada aqui.
+**Duplicatas.** O dataset não tem ID de reserva. Sem chave de negócio, não dá para distinguir uma duplicata técnica de reservas idênticas legítimas (por exemplo, um grupo que reserva vários quartos iguais no mesmo dia pelo mesmo agente). Deduplicar removeria receita real de forma silenciosa, então as linhas foram mantidas e a contagem fica registrada aqui. A Silver marca cada linha com `duplicate_row_count` (linhas idênticas na fonte; 1 = única) e `is_duplicate_row`, e a regra de alerta `unique_row` conta as linhas repetidas a cada execução.
+
+A repetição só é esperada em alguns tipos de cliente. Contagens na Silver (após as regras de remoção):
+
+| `customer_type` | Linhas | Em conjuntos repetidos | Cancelamento (todas) | Só únicas | Uma por conjunto |
+|---|---|---|---|---|---|
+| `Contract` | 4.072 | 1.188 (29%) | 31,0% | 14,5% | 16,3% |
+| `Group` | 574 | 57 (10%) | 10,1% | 9,9% | 9,8% |
+| `Transient` | 89.476 | 22.187 (25%) | 40,8% | 28,6% | 30,1% |
+| `Transient-Party` | 25.087 | 16.709 (67%) | 25,5% | 12,4% | 15,3% |
+
+- **`Transient-Party`** repete mais, como esperado: são reservas ligadas a outra reserva (vários quartos iguais vendidos juntos).
+- **`Group`** quase não repete: o grupo parece entrar como uma linha só.
+- **`Transient` é a anomalia.** Por definição é reserva individual, mas tem 22.187 linhas em conjuntos repetidos (até 180 cópias idênticas). Dessas, 7.982 estão em `market_segment = Groups`, o que contradiz o próprio `customer_type`, e 12.721 são `Non Refund` canceladas. O padrão sugere bloqueios de quartos (allotment) de operadoras e agências, registrados como várias reservas `Transient` e liberados em lote, o que aparece como cancelamento. `Contract` mostra o mesmo sinal em menor escala (34 conjuntos de exatamente 20 cópias).
+
+**Efeito nas métricas.** A receita não é afetada por esses blocos, porque as cópias são majoritariamente canceladas (`revenue = 0`). As **taxas de cancelamento**, sim: a taxa geral é 37,1% com todas as linhas e 27,5% contando uma linha por conjunto, e no segmento `Groups` cai de 61,1% para 27,1% (`Offline TA/TO`: 34,3% → 14,8%). `cancellation_by_segment` e `cancellation_risk_profile` usam todas as linhas, conforme o enunciado; para análises de comportamento de cliente, filtre `is_duplicate_row = 0` ou pondere por `1 / duplicate_row_count` na Silver.
 
 **Nomes de país ambíguos.** O `country_metadata` repete `country_name` em 6 casos. Três são aliases do mesmo país (Angola = `AGO`/`ANG`, China = `CHN`/`CN`, Timor-Leste = `TLS`/`TMP`), unificados na Silver. Os outros três são países diferentes com nome genérico: Korea (`KOR` = Coreia do Sul, `PRK` = Coreia do Norte), Congo (`COD`/`COG`) e Virgin Islands (`VGB` britânicas, `VIR` americanas). Por isso o join e os agrupamentos usam sempre o código ISO-3, nunca o nome. Ressalva: no dataset original, `CN` é ambíguo, por ser o único código ISO-2 em uma coluna ISO-3; a decisão segue o metadado fornecido, que o mapeia para China.
 
@@ -119,7 +134,7 @@ Levantados no notebook `notebooks/exploracao_inicial.ipynb`; contagens abaixo s�
 
 **Outros pontos observados:** `country_metadata` tem 252 países, não ~50 como no enunciado, com chave única; `reservation_status_date` está 100% em `yyyy-MM-dd`.
 
-**Regras de qualidade.** Ficam em `utils/quality_rules.py` como expressões SQL (`{nome: expressão}`): regras de remoção (`has_guests`, `non_negative_adr`) filtram e logam quantas linhas cada uma removeu; regras de alerta (`valid_arrival_date`, `known_country`, `has_country_metadata`, `adr_within_expected_range`) só contam e logam. O formato em SQL string permite reaproveitar as mesmas regras como expectations no Databricks.
+**Regras de qualidade.** Ficam em `utils/quality_rules.py` como expressões SQL (`{nome: expressão}`): regras de remoção (`has_guests`, `non_negative_adr`) filtram e logam quantas linhas cada uma removeu; regras de alerta (`valid_arrival_date`, `known_country`, `has_country_metadata`, `adr_within_expected_range`, `unique_row`) só contam e logam. O formato em SQL string permite reaproveitar as mesmas regras como expectations no Databricks.
 
 ## 6. Principais transformações da Silver
 
@@ -127,6 +142,7 @@ Levantados no notebook `notebooks/exploracao_inicial.ipynb`; contagens abaixo s�
 - **`arrival_date`:** mês por extenso mapeado para 1–12 (`arrival_date_month_num`) e data montada com `concat_ws` + `lpad` + `try_to_date`. Datas impossíveis viram nulo e são contadas pela regra `valid_arrival_date` (0 na execução).
 - **Nulos:** `children` → 0, `country` → `"UNK"`.
 - **Códigos de país:** aliases (`CN`, `TMP`, `ANG`) convertidos para ISO-3 antes do join, com o valor original preservado em `country_raw`. As linhas alias são removidas da dimensão, que fica com um código por país.
+- **Duplicatas:** `duplicate_row_count` (contagem de linhas idênticas nas colunas da fonte, via janela) e `is_duplicate_row`. Nenhuma linha é removida.
 - **Colunas derivadas:** `total_nights`, `total_guests`, `is_family`, `is_long_stay` (`total_nights > 7`), `booking_status` (`Canceled` / `NoShow` / `CheckedOut`) e `revenue`.
 - **Sinais de risco:** `lead_time_bucket` (`000-007`, `008-030`, `031-090`, `091-180`, `181-365`, `366+`), `previous_cancellations_bucket` (`0`, `1`, `2+`) e `has_previous_stay` (`previous_bookings_not_canceled > 0`). Os zeros à esquerda fazem a ordenação alfabética coincidir com a numérica.
 - **`revenue = adr * total_nights` apenas quando `is_canceled = 0`**, senão 0. No dataset, No-Show sempre vem com `is_canceled = 1`, portanto conta como cancelado e não gera receita. Ver ressalva abaixo.
@@ -162,7 +178,7 @@ Critérios:
 - Taxas e médias são arredondadas (4 e 2 casas); cada visão é gravada em um único arquivo Parquet, já ordenado.
 - `cancellation_risk_profile` é uma **5ª visão, proposta além das sugeridas**: a pergunta sobre risco de cancelamento era a única do enunciado sem visão própria. Os sinais são conhecidos no momento da reserva; `reservation_status` e `reservation_status_date` ficam de fora para evitar vazamento do desfecho.
 - `cancelled_potential_revenue` (`adr * total_nights` das canceladas) mede quanto está em jogo em cada perfil e ordena a visão. `risk_level` usa limiares de 0,6 (`high`) e 0,3 (`medium`), e `has_min_sample` marca grupos com pelo menos 50 reservas, sem filtrar os menores. Limiares e volume mínimo são heurísticos e precisam ser validados com o negócio. Na execução: 221 perfis, dos quais 75 têm amostra mínima.
-- Ressalvas de interpretação: (1) os sinais se misturam: 55,5% das 6.484 reservas com cancelamento anterior são `Non Refund` em `Groups` ou `Offline TA/TO`, todas canceladas, provavelmente lotes de agência cancelados em bloco; por isso a curva de `previous_cancellations` não é monotônica (94,4% com 1 cancelamento anterior, 52,7% com 2+) e a visão cruza histórico com depósito e segmento. O mesmo vale para a antecedência: dentro de `No Deposit`, a taxa sobe de 9,2% (até 7 dias) para 39,8% (181–365 dias) e cai para 20,6% acima de 1 ano. (2) O histórico é do perfil no sistema de reservas, não da pessoa: 85,7% dessas reservas têm `is_repeated_guest = 0`, e não há ID de hóspede. (3) `Non Refund` com 99,4% de cancelamento contraria a intuição de negócio; é uma anomalia conhecida do dataset, registrada e não corrigida.
+- Ressalvas de interpretação: (1) os sinais se misturam: 55,5% das 6.484 reservas com cancelamento anterior são `Non Refund` em `Groups` ou `Offline TA/TO`, todas canceladas, provavelmente lotes de agência cancelados em bloco; por isso a curva de `previous_cancellations` não é monotônica (94,4% com 1 cancelamento anterior, 52,7% com 2+) e a visão cruza histórico com depósito e segmento. O mesmo vale para a antecedência: dentro de `No Deposit`, a taxa sobe de 9,2% (até 7 dias) para 39,8% (181–365 dias) e cai para 20,6% acima de 1 ano. (2) O histórico é do perfil no sistema de reservas, não da pessoa: 85,7% dessas reservas têm `is_repeated_guest = 0`, e não há ID de hóspede. (3) `Non Refund` com 99,4% de cancelamento contraria a intuição de negócio; é uma anomalia conhecida do dataset, registrada e não corrigida. Boa parte dela vem dos blocos de linhas idênticas descritos na seção 5, que inflam as taxas dos perfis `Groups` e `Offline TA/TO`.
 - Exemplo da execução: o perfil de maior `cancelled_potential_revenue` é `No Deposit` / `Online TA` / `091-180` / sem cancelamento nem estadia anterior, com 13.052 reservas, taxa de 44,1% (`medium`) e € 3,11 mi em reservas canceladas. Dos 30 perfis `high` com amostra mínima, 18 são `Non Refund` em `Groups` ou `Offline TA/TO` e concentram 87% das reservas desse nível (13.925 de 15.974), com taxas de 92,7% a 100%.
 
 ## 8. Comentário arquitetural
@@ -176,7 +192,7 @@ Uma versão em Databricks com Asset Bundles e Lakeflow está publicada em: <!-- 
 ## 9. Limitações e próximos passos
 
 - **Regras de receita:** No-Show e cancelamentos `Non Refund` têm receita zero por regra do enunciado (ver seção 6). Próximo passo para uma v2: uma **camada semântica** com as regras de receita por hotel (cobrança de No-Show, política de depósito, multas), para que métricas como `total_revenue` sejam definidas uma vez, com a regra de cada hotel, e consumidas de forma consistente por BI.
-- **Duplicatas:** mantidas por falta de chave de negócio. Com um ID de reserva na fonte, a Silver poderia deduplicar com segurança.
+- **Duplicatas:** mantidas por falta de chave de negócio e marcadas em `is_duplicate_row`. Com um ID de reserva na fonte, a Silver poderia deduplicar com segurança. Até lá, as visões de cancelamento poderiam ganhar uma versão contando um bloco repetido como uma reserva, para separar o comportamento do cliente da liberação de allotments.
 - **Carga full:** cada execução reprocessa tudo com `overwrite`. Para volume real, ingestão incremental e `MERGE` (Delta).
 - **Moeda:** `adr` é tratado como euro, sem conversão.
 - **Outliers:** o limite de 1.000 em `adr_within_expected_range` é heurístico e global. Diárias variam por hotel, quarto e temporada; um limite por hotel e mês (por exemplo, baseado em percentis históricos) reduziria falsos alertas. Hoje a regra só alerta: com uma reserva efetiva acima do limite, a correção seria marcar a linha e excluí-la das métricas de receita, sem apagá-la.
