@@ -22,6 +22,8 @@ Este arquivo orienta o Claude Code na construção deste projeto. Leia inteiro a
   - conversão de tipos conforme a seção 4.2 do enunciado;
   - coluna `arrival_date` montada com `to_date` + `concat_ws` + `lpad`, mapeando o mês por extenso para 1–12;
   - `children` nulo vira 0; `country` nulo vira `"UNK"`;
+  - códigos de país alias (`CN`, `TMP`, `ANG`) normalizados para ISO-3 antes do join, com o original em `country_raw`;
+  - linhas inteiramente duplicadas marcadas (`duplicate_row_count`, `is_duplicate_row`), sem remoção;
   - filtros de registros inválidos (sem hóspedes; `adr < 0`), com **log de quantos registros cada filtro removeu**;
   - colunas derivadas: implementar todas as do enunciado (`total_nights`, `total_guests`, `is_family`, `revenue`, `booking_status`, `is_long_stay`);
   - LEFT JOIN com `country_metadata` (traz `country_name`, `continent`) e com `hotel_metadata` (renomeando para `hotel_city`, `hotel_star_rating`, `hotel_opened_year`);
@@ -40,7 +42,7 @@ Este arquivo orienta o Claude Code na construção deste projeto. Leia inteiro a
 ## 3. Estrutura do repositório (a sugerida pelo enunciado)
 
 ```
-befly-medallion-pipeline/
+hotel-booking-demands/
   README.md
   CLAUDE.md
   enunciado_teste_engenheiro_de_dados.md
@@ -60,6 +62,7 @@ befly-medallion-pipeline/
     exploracao_inicial.ipynb    # Fase 0: exploração dos dados, com saídas versionadas
   tests/                        # extra leve: testes das transformações
     conftest.py
+    test_raw_to_bronze.py
     test_bronze_to_silver.py
     test_silver_to_gold.py
   data/
@@ -93,7 +96,7 @@ spark-submit scripts/silver_to_gold.py
 4. Pontos conhecidos a confirmar:
    - `children` tem valores `"NA"`, que o `nullValue="NULL"` não cobre. Na Bronze, leia `children` como **string** (fiel à fonte) e faça o cast na Silver.
    - Existem reservas com 0 hóspedes e pelo menos um `adr` negativo.
-   - Há muitas **linhas inteiramente duplicadas** e não existe ID de reserva. **Não deduplique.** Registre a contagem e explique no README que, sem chave de negócio, não dá para distinguir duplicata de reservas idênticas legítimas.
+   - Há muitas **linhas inteiramente duplicadas** e não existe ID de reserva. **Não deduplique.** Marque as linhas repetidas na Silver, registre a contagem e explique no README que, sem chave de negócio, não dá para distinguir duplicata de reservas idênticas legítimas.
    - Pode haver códigos de país sem correspondência em `country_metadata`. Conte quantos ficam sem `country_name`.
 5. Commit do notebook **com as saídas renderizadas**.
 
@@ -121,7 +124,7 @@ spark-submit scripts/silver_to_gold.py
 
 Dicionários `{nome: expressão SQL}`:
 - `SILVER_DROP_RULES`: `has_guests` (`adults + children + babies > 0`) e `non_negative_adr` (`adr >= 0`).
-- `SILVER_WARN_RULES`: `valid_arrival_date`, `known_country` (`country <> 'UNK'`), `has_country_metadata`.
+- `SILVER_WARN_RULES`: `valid_arrival_date`, `known_country` (`country <> 'UNK'`), `has_country_metadata`, `adr_within_expected_range` (`adr <= 1000`), `unique_row` (`is_duplicate_row = 0`).
 
 Na Silver, aplicar cada regra de remoção com `filter(F.expr(rule))`, logando quantos registros cada uma removeu. As regras de alerta apenas contam e logam.
 
@@ -154,11 +157,11 @@ Tom técnico e direto, sem marketing.
 
 Ao final, uma frase com link para a v2: `<!-- TODO: link da v2 -->`. Mantenha o placeholder; eu preencho quando a v2 estiver publicada. Se não houver link no momento da entrega, a frase deve ser removida.
 
-Não afirmar experiência com Terraform. Descrever os bundles como IaC declarativa nativa do Databricks.
+Citar só ferramentas que fazem parte da minha experiência: descrever os bundles como IaC declarativa nativa do Databricks, sem recorrer a Terraform.
 
 ## 9. Higiene do repositório
 
-- `.gitignore`: `data/bronze/`, `data/silver/`, `data/gold/`, `spark-warehouse/`, `metastore_db/`, `derby.log`, `.venv/`, `__pycache__/`, `.ipynb_checkpoints/`, `.pytest_cache/`, `.env`.
+- `.gitignore`: `data/bronze/`, `data/silver/`, `data/gold/`, `spark-warehouse/`, `metastore_db/`, `derby.log`, `.venv/`, `__pycache__/`, `.ipynb_checkpoints/`, `.pytest_cache/`, `.env`, `devlog/` (notas locais de desenvolvimento).
 - Os CSVs em `data/raw/` são versionados (pequenos, garantem a reprodutibilidade para o avaliador).
 - Código, nomes de colunas, logs e commits em **inglês**; comentários, docstrings e README em **português**.
 - Conventional commits (`feat:`, `test:`, `docs:`, `chore:`), com pelo menos um commit por fase.
