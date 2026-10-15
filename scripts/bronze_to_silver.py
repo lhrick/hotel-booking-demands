@@ -9,11 +9,12 @@ from pathlib import Path
 # O spark-submit não coloca a raiz do projeto no sys.path; adiciona aqui para importar `utils`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
 
 from utils.config import PipelineConfig, parse_args
 from utils.quality_rules import SILVER_DROP_RULES, SILVER_WARN_RULES
+from utils.schemas import BOOKINGS_SCHEMA
 from utils.spark import get_spark, setup_logging
 
 logger = logging.getLogger("bronze_to_silver")
@@ -40,6 +41,9 @@ BOOKING_STATUS = {"Canceled": "Canceled", "No-Show": "NoShow", "Check-Out": "Che
 
 SILVER_PARTITIONS = ["arrival_date_year", "arrival_date_month_num"]
 
+# Colunas da fonte que definem uma linha duplicada (exclui as de linhagem da Bronze).
+DUPLICATE_KEY = BOOKINGS_SCHEMA.fieldNames()
+
 
 class RowCountMismatchError(RuntimeError):
     """Um join alterou o número de linhas (chave duplicada em uma tabela de referência)."""
@@ -48,6 +52,19 @@ class RowCountMismatchError(RuntimeError):
 def _map_literal(mapping: dict) -> Column:
     """Converte um dicionário Python em uma coluna de mapa literal do Spark."""
     return F.create_map(*[F.lit(x) for kv in mapping.items() for x in kv])
+
+
+def add_duplicate_flags(df: DataFrame, key: list[str]) -> DataFrame:
+    """Marca linhas idênticas nas colunas `key`, sem removê-las.
+
+    `duplicate_row_count` é o número de linhas idênticas na fonte (1 = única) e
+    `is_duplicate_row` vale 1 quando a linha faz parte de um conjunto repetido.
+    Sem ID de reserva não dá para eleger a "original", então todas as cópias são marcadas.
+    """
+    count = F.count(F.lit(1)).over(Window.partitionBy(*key))
+    return df.withColumn("duplicate_row_count", count).withColumn(
+        "is_duplicate_row", (F.col("duplicate_row_count") > 1).cast("int")
+    )
 
 
 def cast_types(df: DataFrame) -> DataFrame:
@@ -197,8 +214,12 @@ def run(spark: SparkSession, config: PipelineConfig) -> None:
     countries = canonical
     hotels = spark.read.parquet(str(config.bronze_dir / "hotels"))
     logger.info("bookings: read %d rows from bronze", bookings.count())
+    logger.info(
+        "duplicates: %d excess copies of fully identical rows (kept, flagged in is_duplicate_row)",
+        bookings.count() - bookings.dropDuplicates(DUPLICATE_KEY).count(),
+    )
 
-    df = add_arrival_date(cast_types(bookings))
+    df = add_arrival_date(cast_types(add_duplicate_flags(bookings, DUPLICATE_KEY)))
     logger.info("children: %d values not castable to int (source 'NA') -> 0", df.filter(F.col("children").isNull()).count())
     for r in df.filter(F.col("country").isin(*COUNTRY_CODE_ALIASES)).groupBy("country").count().collect():
         logger.info("country: %d rows normalized %s -> %s", r["count"], r["country"], COUNTRY_CODE_ALIASES[r["country"]])

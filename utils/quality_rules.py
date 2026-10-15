@@ -17,4 +17,6 @@ SILVER_WARN_RULES: dict[str, str] = {
     "has_country_metadata": "country_name IS NOT NULL",
     # Limite heurístico: o maior adr plausível na fonte é 510; acima de 1000 indica provável erro de digitação.
     "adr_within_expected_range": "adr <= 1000",
+    # Conta todas as linhas de conjuntos repetidos; mantidas por falta de chave de negócio.
+    "unique_row": "is_duplicate_row = 0",
 }

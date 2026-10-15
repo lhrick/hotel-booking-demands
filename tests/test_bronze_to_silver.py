@@ -9,6 +9,7 @@ from scripts.bronze_to_silver import (
     add_arrival_date,
     add_cancellation_risk_features,
     add_derived_columns,
+    add_duplicate_flags,
     apply_drop_rules,
     canonical_countries,
     cast_types,
@@ -169,12 +170,14 @@ def test_joins_keep_row_count_and_bring_attributes(spark: SparkSession) -> None:
     )
     assert result.filter("country_name IS NULL").count() == 2
     assert count_warn_rules(
-        result.withColumns({"arrival_date": F.current_date(), "adr": F.lit(100.0)}), SILVER_WARN_RULES
+        result.withColumns({"arrival_date": F.current_date(), "adr": F.lit(100.0), "is_duplicate_row": F.lit(0)}),
+        SILVER_WARN_RULES,
     ) == {
         "valid_arrival_date": 0,
         "known_country": 1,
         "has_country_metadata": 2,
         "adr_within_expected_range": 0,
+        "unique_row": 0,
     }
 
 
@@ -184,6 +187,27 @@ def test_adr_warn_rule_flags_outlier_without_removing(spark: SparkSession) -> No
 
     assert count_warn_rules(df, rule) == {"adr_within_expected_range": 1}
     assert df.count() == 2
+
+
+def test_duplicate_flags_mark_all_copies_without_removing(spark: SparkSession) -> None:
+    df = spark.createDataFrame(
+        [("Transient", "PRT", None), ("Transient", "PRT", None), ("Transient", "PRT", None),
+         ("Transient", "ESP", None), ("Group", "PRT", "40")],
+        "customer_type string, country string, company string",
+    )
+    result = add_duplicate_flags(df, df.columns)
+    rows = sorted((r.customer_type, r.country, r.duplicate_row_count, r.is_duplicate_row) for r in result.collect())
+
+    # Nulos iguais contam como iguais, como em uma duplicata literal da fonte.
+    assert rows == [
+        ("Group", "PRT", 1, 0),
+        ("Transient", "ESP", 1, 0),
+        ("Transient", "PRT", 3, 1),
+        ("Transient", "PRT", 3, 1),
+        ("Transient", "PRT", 3, 1),
+    ]
+    rule = {"unique_row": SILVER_WARN_RULES["unique_row"]}
+    assert count_warn_rules(result, rule) == {"unique_row": 3}
 
 
 def test_join_with_duplicate_key_fails(spark: SparkSession) -> None:
