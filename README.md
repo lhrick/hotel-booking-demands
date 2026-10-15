@@ -187,8 +187,6 @@ Em produção, o armazenamento ficaria no S3 com layout por camada e domínio (`
 
 Uma alternativa AWS-nativa seria: S3 como data lake, Glue Data Catalog como metastore, transformações em Glue jobs (Spark) ou EMR, consulta com Athena ou Trino e orquestração com Airflow (MWAA) ou Step Functions. As tabelas poderiam usar Delta ou Iceberg sobre o Glue Catalog para manter ACID e time travel, e as regras de qualidade continuariam em SQL, avaliadas pelos próprios jobs.
 
-Uma versão em Databricks com Asset Bundles e Lakeflow está publicada em: <!-- TODO: link da v2 -->
-
 ## 9. Limitações e próximos passos
 
 - **Regras de receita:** No-Show e cancelamentos `Non Refund` têm receita zero por regra do enunciado (ver seção 6). Próximo passo para uma v2: uma **camada semântica** com as regras de receita por hotel (cobrança de No-Show, política de depósito, multas), para que métricas como `total_revenue` sejam definidas uma vez, com a regra de cada hotel, e consumidas de forma consistente por BI.
